@@ -1,0 +1,138 @@
+<!doctype html>
+
+<html>
+  <head>
+    <title>Coordination - all links from wiki to dxdy.ru</title>
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+    
+    <script>
+      function to_hyphen(name) {
+        return name.replace(/ /g, '-').replace(/\?/g, '');
+      }
+
+      function from_hyphen(name) {
+        return name.replace(/-/g, ' ');
+      }
+
+      function name_to_raw_url(name) {
+        var template = 'https://raw.githubusercontent.com/wiki/dxdy-guide/dxdy-guide.github.io/{}.md';
+        return template.replace('{}', to_hyphen(name));
+      }
+
+      function name_to_wiki_url(name) {
+        var template = 'https://github.com/dxdy-guide/dxdy-guide.github.io/wiki/{}';
+        return template.replace('{}', to_hyphen(name));
+      }
+
+      function make_p(name, link, i) {
+        var template = '<p class="{3}"><a href="{0}">{0}</a> linked from <a href="{1}">{2}</a></p>';
+        var params = [link, name_to_wiki_url(name), name, "link" + i];
+        var replacer = function(match, part1) {
+          return params[parseInt(part1)];
+        };
+        return template.replace(/\{(\d)\}/g, replacer);
+      }
+
+      function make_err(name) {
+        var template = '<p>Error when accessing page <a href="{0}">{1}</a></p>';
+        var params = [name_to_wiki_url(name), name];
+        var replacer = function(match, part1) {
+          return params[parseInt(part1)];
+        };
+        return template.replace(/\{(\d)\}/g, replacer);
+      }
+
+      function processMarkdown(state, name, text) {
+        var wiki_link_regex = /\[\[([^\]]*)\]\]/g;
+        while ((result = wiki_link_regex.exec(text)) !== null) {
+          state.queuedNames.push(from_hyphen(result[1]));
+        }
+
+        var wiki_url_regex = /\(https:\/\/github.com\/dxdy-guide\/dxdy-guide.github.io\/wiki\/([^\/#\n]*)(\/*)?(#.*)?\)/g
+        while ((result = wiki_url_regex.exec(text)) !== null) {
+          state.queuedNames.push(from_hyphen(result[1]));
+        }
+
+        var dxdy_url_regex = /\((http:\/\/dxdy.ru\/([^\/\)#]*)(#[^\/\)]*)?)\)/g
+        while ((result = dxdy_url_regex.exec(text)) !== null) {
+          state.foundLinks.push([result[1], name]);
+          $(".loading").text("Found " + state.foundLinks.length + " links...");
+        }
+
+        state.processedNames.push(name);
+      }
+
+      function search(state) {
+        console.log(state);
+
+        var name;
+        do {
+          if (state.queuedNames.length === 0) {
+            state.finish(state);
+            return;
+          }
+          name = state.queuedNames.pop();
+        } while ($.inArray(name, state.processedNames) >= 0);
+
+        console.log("Processing wiki page " + name);
+       
+        var process = function(text) {
+          processMarkdown(state, name, text);
+          setTimeout(function() { search(state); }, 10);
+        };
+        var restart = function(err) {
+          var p = make_err(name);
+          $(".errors").append(p);
+          search(state);
+        }
+
+        $.get(name_to_raw_url(name), process).fail(restart);
+      }
+
+      function start() {
+        var finish = function(state) {
+          state.foundLinks.sort()
+          state.foundLinks.forEach( function(x, i) {
+            var p = make_p(x[1], x[0], i);
+            $(".links").append(p);
+          });
+          state.foundLinks.forEach( function(x, i, links) {
+            var link = links[i];
+            var prevLink = ["", ""];
+            if (i > 0) {
+              prevLink = links[i - 1];
+            }
+            var nextLink = ["", ""];
+            if (i < links.length - 1) {
+              nextLink = links[i + 1]
+            }
+            if (link[0] == prevLink[0] || link[0] == nextLink[0]) {
+              $(".link" + i).css("background-color", "rgb(100,255,100)")
+            }
+            if (link[0] == nextLink[0] && link[1] == nextLink[1]) {
+              $(".link" + i).css("background-color", "rgb(255,100,100)")
+            }
+          });
+          console.log(state);
+        };
+
+        var state = {
+          'queuedNames' : ['Home'],
+          'processedNames' : [],
+          'foundLinks': [],
+          'finish': finish
+        };
+        search(state);
+      }
+
+      $(document).ready(start);
+    </script>
+  
+  </head>
+
+  <body>
+    <div class="loading">Loading...</div>
+    <div class="links"></div>
+    <div class="errors" style="background-color:rgb(200,0,0);"></div>
+  </body>
+</html>
